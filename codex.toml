@@ -1,0 +1,20 @@
+# Project-local Codex CLI configuration for GreenNode MaaS MiniMax.
+# Export the API key before running Codex:
+# export MAAS_API_KEY=""
+
+model_provider = "maas"
+model = "minimax/minimax-m2.5"
+
+# MaaS does not expose model metadata to Codex, so declare it explicitly.
+model_context_window = 204800
+model_max_output_tokens = 16400
+
+# MaaS backend is stateless. Codex should send the full conversation each turn.
+disable_response_storage = true
+
+[model_providers.maas]
+name = "MAAS AI Gateway"
+base_url = "https://maas-llm-aiplatform-hcm.api.vngcloud.vn/v1"
+env_key = "MAAS_API_KEY"
+wire_api = "responses"
+request_max_retries = 3

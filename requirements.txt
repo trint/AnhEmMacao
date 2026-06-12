@@ -1,0 +1,6 @@
+greennode-agentbase
+python-dotenv
+python-multipart
+pypdf
+python-docx
+openpyxl
