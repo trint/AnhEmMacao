@@ -1255,12 +1255,20 @@ def _enhance_with_llm(response: dict, payload: dict, context_items: list[dict]) 
 
         prompt_text = (
             "You are a senior QC test design assistant. Use the filtered business context to improve "
-            "the provided test cases. Return ONLY valid JSON with keys test_cases and notes. "
-            "Each test case must include id, title, type, priority, preconditions, test_data, steps, "
-            "expected_result, references. Do not invent facts outside the context.\n\n"
+            "the provided test cases.\n\n"
+            "RULES:\n"
+            "1. Return ONLY valid JSON with exactly two keys: test_cases (array) and notes (array of strings).\n"
+            "2. Each test case must include: id, title, type, priority, preconditions (array), "
+            "test_data (array), steps (array), expected_result (string), references (array).\n"
+            "3. Each step must be a specific, executable action — never write vague steps like "
+            "'Perform action' or 'Check result'.\n"
+            "4. Each test case must reference specific conditions, fields, or rules from the business context.\n"
+            "5. Each test case must have at least 3 steps.\n"
+            "6. Do not invent facts outside the context.\n"
+            "7. Output compact JSON with no markdown fences.\n\n"
             f"Feature payload:\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
             f"Filtered context chunks:\n{context or 'No context matched.'}\n\n"
-            f"Baseline test cases:\n{json.dumps(fallback_cases, ensure_ascii=False, indent=2)}"
+            f"Baseline test cases to improve:\n{json.dumps(fallback_cases, ensure_ascii=False, indent=2)}"
         )
 
         headers = {
@@ -1284,7 +1292,7 @@ def _enhance_with_llm(response: dict, payload: dict, context_items: list[dict]) 
                         },
                     ],
                     "temperature": 0.2,
-                    "max_output_tokens": 6000,
+                    "max_output_tokens": 8000,
                 },
                 timeout=45,
             )
