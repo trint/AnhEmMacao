@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import os
 import re
@@ -9,12 +11,12 @@ from typing import Any
 from xml.etree import ElementTree
 from contextlib import contextmanager
 
-import fcntl
+from filelock import FileLock
 
 from dotenv import load_dotenv
 from greennode_agentbase import GreenNodeAgentBaseApp, PingStatus, RequestContext
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, Response
 
 load_dotenv()
 
@@ -413,6 +415,7 @@ CHAT_HTML = """<!doctype html>
       <div class="toolbar">
         <strong>Generated test cases</strong>
         <span class="status" id="status">Ready</span>
+        <button id="export-csv" type="button" style="display:none;margin-left:auto;padding:4px 12px;font-size:13px;cursor:pointer;">Export CSV</button>
       </div>
       <div id="output" class="empty">Train tai lieu hoac nhap feature, sau do bam Generate.</div>
     </main>
@@ -422,6 +425,7 @@ CHAT_HTML = """<!doctype html>
     const output = document.querySelector("#output");
     const statusEl = document.querySelector("#status");
     const send = document.querySelector("#send");
+    const exportCsvBtn = document.querySelector("#export-csv");
     const trainText = document.querySelector("#train-text");
     const trainFile = document.querySelector("#train-file");
     const refreshKnowledge = document.querySelector("#refresh-knowledge");
@@ -429,6 +433,8 @@ CHAT_HTML = """<!doctype html>
     const knowledgeType = document.querySelector("#knowledge-type");
     const knowledgeText = document.querySelector("#knowledge-text");
     const trainingHint = document.querySelector("#training-hint");
+
+    let lastGeneratedData = null;
 
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, char => ({
@@ -638,6 +644,8 @@ CHAT_HTML = """<!doctype html>
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Request failed");
+        lastGeneratedData = data;
+        exportCsvBtn.style.display = "inline-block";
         render(data);
         statusEl.textContent = "Done";
       } catch (error) {
@@ -646,6 +654,32 @@ CHAT_HTML = """<!doctype html>
         statusEl.textContent = "Error";
       } finally {
         send.disabled = false;
+      }
+    });
+
+    exportCsvBtn.addEventListener("click", async () => {
+      if (!lastGeneratedData) return;
+      try {
+        exportCsvBtn.disabled = true;
+        statusEl.textContent = "Exporting...";
+        const response = await fetch("/export/csv", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ test_cases: lastGeneratedData.test_cases || [], feature: lastGeneratedData.feature || "" })
+        });
+        if (!response.ok) throw new Error("Export failed");
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || "testcases.csv";
+        a.click();
+        URL.revokeObjectURL(url);
+        statusEl.textContent = "Exported";
+      } catch (error) {
+        statusEl.textContent = "Export error";
+      } finally {
+        exportCsvBtn.disabled = false;
       }
     });
 
@@ -756,16 +790,10 @@ def _case(
     }
 
 
-@contextmanager
-def _knowledge_lock():
+def _knowledge_lock() -> FileLock:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     lock_path = DATA_DIR / "knowledge.lock"
-    with lock_path.open("w", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    return FileLock(str(lock_path))
 
 
 def _read_knowledge_unlocked() -> list[dict]:
@@ -1753,6 +1781,48 @@ async def knowledge_upload_api(request: Request) -> JSONResponse:
     return JSONResponse({"item": item})
 
 
+async def export_csv_api(request: Request) -> Response:
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+    test_cases = body.get("test_cases", [])
+    feature = body.get("feature", "testcases")
+
+    sio = io.StringIO()
+    writer = csv.writer(sio)
+    writer.writerow(["ID", "Title", "Type", "Priority", "Preconditions", "Test Data", "Steps", "Expected Result", "References"])
+
+    for tc in test_cases:
+        steps = tc.get("steps") or []
+        preconditions = tc.get("preconditions") or []
+        test_data = tc.get("test_data") or []
+        references = tc.get("references") or []
+        writer.writerow([
+            tc.get("id", ""),
+            tc.get("title", ""),
+            tc.get("type", ""),
+            tc.get("priority", ""),
+            "\n".join(preconditions),
+            "\n".join(test_data),
+            "\n".join(steps),
+            tc.get("expected_result", ""),
+            "\n".join(references),
+        ])
+
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M")
+    filename = f"testcases-{timestamp}.csv"
+    # UTF-8 BOM so Google Sheets detects encoding correctly
+    content = "﻿" + sio.getvalue()
+
+    return Response(
+        content=content.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 app.add_route("/", chat_page, methods=["GET"])
 app.add_route("/invocations", chat_page, methods=["GET"])
 app.add_route("/chat", chat_api, methods=["POST"])
@@ -1761,6 +1831,7 @@ app.add_route("/knowledge", knowledge_list_api, methods=["GET"])
 app.add_route("/knowledge", knowledge_create_api, methods=["POST"])
 app.add_route("/knowledge/upload", knowledge_upload_api, methods=["POST"])
 app.add_route("/knowledge/action", knowledge_action_api, methods=["POST"])
+app.add_route("/export/csv", export_csv_api, methods=["POST"])
 
 
 @app.entrypoint
