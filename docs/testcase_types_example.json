@@ -1,0 +1,52 @@
+[
+  {
+    "type": "Positive",
+    "priority": "High",
+    "enabled": true,
+    "condition": null
+  },
+  {
+    "type": "Negative",
+    "priority": "High",
+    "enabled": true,
+    "condition": null
+  },
+  {
+    "type": "Boundary",
+    "priority": "Medium",
+    "enabled": true,
+    "condition": null
+  },
+  {
+    "type": "Permission",
+    "priority": "High",
+    "enabled": true,
+    "condition": null
+  },
+  {
+    "type": "Resilience",
+    "priority": "Medium",
+    "enabled": true,
+    "condition": null
+  },
+  {
+    "type": "Workflow",
+    "priority": "High",
+    "enabled": true,
+    "condition": "has_workflow"
+  },
+  {
+    "type": "Security",
+    "priority": "High",
+    "enabled": true,
+    "condition": null,
+    "steps_hint": "Attempt SQL injection, XSS, and IDOR attacks on all input fields and API endpoints."
+  },
+  {
+    "type": "Performance",
+    "priority": "Medium",
+    "enabled": false,
+    "condition": null,
+    "steps_hint": "Load the feature with 100 concurrent users and measure response time."
+  }
+]
