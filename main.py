@@ -924,7 +924,7 @@ def add_knowledge(
     readable: bool = True,
 ) -> dict:
     normalized = _normalize_multiline(text)
-    if status == READY and len(normalized) < 8:
+    if status == READY and len(normalized) < 3:
         raise ValueError("Knowledge content is too short to train.")
 
     with _knowledge_lock():
@@ -1459,6 +1459,34 @@ def _strip_markup(text: str) -> str:
     return _normalize_multiline(text)
 
 
+def _strip_markdown(text: str) -> str:
+    # Fenced code blocks: keep content, remove fences
+    text = re.sub(r"^```[^\n]*\n(.*?)```", lambda m: m.group(1), text, flags=re.MULTILINE | re.DOTALL)
+    # Inline code
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    # ATX headers
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    # Setext headers
+    text = re.sub(r"^[=\-]{3,}\s*$", "", text, flags=re.MULTILINE)
+    # Bold/italic
+    text = re.sub(r"\*{1,3}([^*\n]+)\*{1,3}", r"\1", text)
+    text = re.sub(r"_{1,3}([^_\n]+)_{1,3}", r"\1", text)
+    # Images before links
+    text = re.sub(r"!\[([^\]]*)\]\([^\)]*\)", r"\1", text)
+    # Links
+    text = re.sub(r"\[([^\]]+)\]\([^\)]*\)", r"\1", text)
+    # Blockquotes
+    text = re.sub(r"^>\s*", "", text, flags=re.MULTILINE)
+    # Horizontal rules
+    text = re.sub(r"^[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
+    # HTML tags
+    text = re.sub(r"<[^>]+>", " ", text)
+    # List markers (- item, * item, 1. item)
+    text = re.sub(r"^[\s]*[-*+]\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^[\s]*\d+\.\s+", "", text, flags=re.MULTILINE)
+    return _normalize_multiline(text)
+
+
 def _max_upload_bytes() -> int:
     raw = os.getenv("MAX_UPLOAD_BYTES", str(DEFAULT_MAX_UPLOAD_BYTES))
     try:
@@ -1554,6 +1582,10 @@ def extract_file_text(filename: str, data: bytes) -> str:
         return _extract_xlsx(data)
 
     text = _decode_bytes(data)
+    if suffix in {".md"}:
+        stripped = _strip_markdown(text)
+        return stripped if stripped else _normalize_multiline(text)
+
     if suffix in {".xml", ".svg", ".drawio", ".bpmn"}:
         try:
             root = ElementTree.fromstring(text)
