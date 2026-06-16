@@ -1,3 +1,6 @@
+import base64
+import csv
+import io
 import json
 import os
 import re
@@ -9,12 +12,12 @@ from typing import Any
 from xml.etree import ElementTree
 from contextlib import contextmanager
 
-import fcntl
+from filelock import FileLock
 
 from dotenv import load_dotenv
 from greennode_agentbase import GreenNodeAgentBaseApp, PingStatus, RequestContext
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, Response
 
 load_dotenv()
 
@@ -22,10 +25,10 @@ app = GreenNodeAgentBaseApp()
 
 DATA_DIR = Path(".agentbase")
 KNOWLEDGE_FILE = DATA_DIR / "knowledge.json"
-MAX_CONTEXT_CHARS = 4200
+MAX_CONTEXT_CHARS = 6000
 CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 180
-TOP_CONTEXT_CHUNKS = 6
+TOP_CONTEXT_CHUNKS = 10
 DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 SUPPORTED_EXTENSIONS = {
@@ -55,6 +58,17 @@ READY = "READY"
 NEEDS_REVIEW = "NEEDS_REVIEW"
 FAILED = "FAILED"
 AUTO_LEARNED_TYPE = "auto-learned"
+
+TESTCASE_TYPES_FILE = DATA_DIR / "testcase_types.json"
+
+DEFAULT_TEST_CASE_TYPES: list[dict] = [
+    {"type": "Positive", "priority": "High", "enabled": True, "condition": None},
+    {"type": "Negative", "priority": "High", "enabled": True, "condition": None},
+    {"type": "Boundary", "priority": "Medium", "enabled": True, "condition": None},
+    {"type": "Permission", "priority": "High", "enabled": True, "condition": None},
+    {"type": "Resilience", "priority": "Medium", "enabled": True, "condition": None},
+    {"type": "Workflow", "priority": "High", "enabled": True, "condition": "has_workflow"},
+]
 
 QUALITY_CHECKLIST = [
     "Each case has a clear objective and expected result.",
@@ -414,6 +428,7 @@ CHAT_HTML = """<!doctype html>
       <div class="toolbar">
         <strong>Generated test cases</strong>
         <span class="status" id="status">Ready</span>
+        <button id="export-csv" type="button" style="display:none;margin-left:auto;padding:4px 12px;font-size:13px;cursor:pointer;">Export CSV</button>
       </div>
       <div id="output" class="empty">Train tai lieu hoac nhap feature, sau do bam Generate.</div>
     </main>
@@ -423,6 +438,7 @@ CHAT_HTML = """<!doctype html>
     const output = document.querySelector("#output");
     const statusEl = document.querySelector("#status");
     const send = document.querySelector("#send");
+    const exportCsvBtn = document.querySelector("#export-csv");
     const trainText = document.querySelector("#train-text");
     const trainFile = document.querySelector("#train-file");
     const refreshKnowledge = document.querySelector("#refresh-knowledge");
@@ -430,6 +446,8 @@ CHAT_HTML = """<!doctype html>
     const knowledgeType = document.querySelector("#knowledge-type");
     const knowledgeText = document.querySelector("#knowledge-text");
     const trainingHint = document.querySelector("#training-hint");
+
+    let lastGeneratedData = null;
 
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, char => ({
@@ -639,6 +657,8 @@ CHAT_HTML = """<!doctype html>
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Request failed");
+        lastGeneratedData = data;
+        exportCsvBtn.style.display = "inline-block";
         render(data);
         statusEl.textContent = "Done";
       } catch (error) {
@@ -647,6 +667,32 @@ CHAT_HTML = """<!doctype html>
         statusEl.textContent = "Error";
       } finally {
         send.disabled = false;
+      }
+    });
+
+    exportCsvBtn.addEventListener("click", async () => {
+      if (!lastGeneratedData) return;
+      try {
+        exportCsvBtn.disabled = true;
+        statusEl.textContent = "Exporting...";
+        const response = await fetch("/export/csv", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ test_cases: lastGeneratedData.test_cases || [], feature: lastGeneratedData.feature || "" })
+        });
+        if (!response.ok) throw new Error("Export failed");
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || "testcases.csv";
+        a.click();
+        URL.revokeObjectURL(url);
+        statusEl.textContent = "Exported";
+      } catch (error) {
+        statusEl.textContent = "Export error";
+      } finally {
+        exportCsvBtn.disabled = false;
       }
     });
 
@@ -757,16 +803,23 @@ def _case(
     }
 
 
-@contextmanager
-def _knowledge_lock():
+def _knowledge_lock() -> FileLock:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     lock_path = DATA_DIR / "knowledge.lock"
-    with lock_path.open("w", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    return FileLock(str(lock_path))
+
+
+def load_test_case_types() -> list[dict]:
+    """Load custom test case types from config file, falling back to defaults."""
+    if not TESTCASE_TYPES_FILE.exists():
+        return list(DEFAULT_TEST_CASE_TYPES)
+    try:
+        data = json.loads(TESTCASE_TYPES_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, list) and data:
+            return data
+    except (json.JSONDecodeError, OSError):
+        pass
+    return list(DEFAULT_TEST_CASE_TYPES)
 
 
 def _read_knowledge_unlocked() -> list[dict]:
@@ -892,7 +945,7 @@ def _chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OV
     ]
 
 
-def _chunk_score(query: str, query_keywords: set[str], item: dict, chunk: dict) -> int:
+def _chunk_score(query: str, query_keywords: set[str], item: dict, chunk: dict) -> float:
     chunk_text = " ".join(
         [
             str(item.get("title", "")),
@@ -902,7 +955,9 @@ def _chunk_score(query: str, query_keywords: set[str], item: dict, chunk: dict) 
         ]
     )
     chunk_keywords = set(chunk.get("keywords") or _keywords(chunk_text))
-    score = len(query_keywords & chunk_keywords) * 3
+    overlap = query_keywords & chunk_keywords
+    # Ratio-based scoring: rewards focused chunks with high keyword density
+    score: float = (len(overlap) / max(len(chunk_keywords), 1)) * 10
     lower_query = query.lower().strip()
     lower_text = chunk_text.lower()
     if lower_query and lower_query in lower_text:
@@ -1470,12 +1525,6 @@ def _enhance_with_llm(response: dict, payload: dict, context_items: list[dict]) 
             context_block = "No trained context. Generate from your own QC expertise."
 
         prompt_text = (
-            f"{instructions} "
-            "Each test case must include id, title, type, priority, preconditions, test_data, steps, "
-            "expected_result, references.\n\n"
-            f"Feature payload:\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
-            f"Filtered context chunks:\n{context_block}\n\n"
-            f"Baseline test cases:\n{json.dumps(fallback_cases, ensure_ascii=False, indent=2)}"
         )
 
         headers = {
@@ -1499,7 +1548,7 @@ def _enhance_with_llm(response: dict, payload: dict, context_items: list[dict]) 
                         },
                     ],
                     "temperature": 0.2,
-                    "max_output_tokens": 6000,
+                    "max_output_tokens": 8000,
                 },
                 timeout=timeout_s,
             )
@@ -1567,6 +1616,59 @@ def _enhance_with_llm(response: dict, payload: dict, context_items: list[dict]) 
         return response
 
 
+def _extract_image_via_vision(data: bytes, media_type: str) -> str:
+    """Extract text from an image using a vision-capable LLM.
+
+    Only active when LLM_WIRE_API=chat and LLM_VISION_ENABLED=true.
+    Raises ValueError on failure or when vision is not configured.
+    """
+    status = llm_status()
+    vision_enabled = os.getenv("LLM_VISION_ENABLED", "").lower() == "true"
+    if not status["configured"] or status["wire_api"] != "chat" or not vision_enabled:
+        raise ValueError("Vision extraction not available: check LLM_WIRE_API=chat and LLM_VISION_ENABLED=true.")
+
+    import httpx
+
+    base_url = status["base_url"].rstrip("/")
+    api_key = os.getenv("LLM_API_KEY") or os.getenv("MAAS_API_KEY", "")
+    model = status["model"]
+    image_b64 = base64.b64encode(data).decode("ascii")
+
+    response = httpx.post(
+        f"{base_url}/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{media_type};base64,{image_b64}"},
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "Extract all text and structured content from this image for QA documentation. "
+                                "Include labels, states, transitions, steps, conditions, and any visible text. "
+                                "Format the output as readable plain text."
+                            ),
+                        },
+                    ],
+                }
+            ],
+            "temperature": 0.1,
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    content = response.json()["choices"][0]["message"]["content"]
+    if not content or not content.strip():
+        raise ValueError("Vision model returned empty response.")
+    return content.strip()
+
+
 def build_test_cases(payload: dict) -> dict:
     feature = _clean_text(payload.get("feature") or payload.get("message") or payload.get("requirement"))
     if not feature:
@@ -1587,12 +1689,8 @@ def build_test_cases(payload: dict) -> dict:
     workflow_steps = derive_workflow_steps(context_items)
     feature_key = _slug(feature)
 
-    cases = [
-        _case(
-            f"TC-{feature_key}-001",
-            f"{actor} can complete the happy path for {feature}",
-            "Positive",
-            "High",
+    type_steps_map: dict[str, tuple[list[str], str]] = {
+        "Positive": (
             [
                 f"Open {platform} with a valid {actor} account.",
                 f"Navigate to the {feature} flow.",
@@ -1600,26 +1698,16 @@ def build_test_cases(payload: dict) -> dict:
                 "Submit or complete the action.",
             ],
             f"The {feature} action completes successfully and the system matches the documented workflow.",
-            context_refs,
         ),
-        _case(
-            f"TC-{feature_key}-002",
-            f"Required validation is shown for missing or invalid data in {feature}",
-            "Negative",
-            "High",
+        "Negative": (
             [
                 f"Open the {feature} flow.",
                 "Leave mandatory fields empty or provide invalid values from the trained rules.",
                 "Submit the form or trigger the action.",
             ],
             "The system blocks submission and shows clear validation messages near the invalid fields.",
-            context_refs,
         ),
-        _case(
-            f"TC-{feature_key}-003",
-            f"Boundary values are handled correctly for {feature}",
-            "Boundary",
-            "Medium",
+        "Boundary": (
             [
                 f"Open the {feature} flow.",
                 "Enter minimum allowed values and submit.",
@@ -1627,49 +1715,73 @@ def build_test_cases(payload: dict) -> dict:
                 "Repeat with values just outside the allowed range.",
             ],
             "Allowed boundary values are accepted; out-of-range values are rejected with understandable errors.",
-            context_refs,
         ),
-        _case(
-            f"TC-{feature_key}-004",
-            f"Unauthorized access is prevented for {feature}",
-            "Permission",
-            "High",
+        "Permission": (
             [
                 "Sign in with an account that should not have access to this feature.",
                 f"Attempt to open or execute the {feature} flow.",
             ],
             "The system denies access without exposing sensitive data or allowing the action to complete.",
-            context_refs,
         ),
-        _case(
-            f"TC-{feature_key}-005",
-            f"System handles interruption or failure during {feature}",
-            "Resilience",
-            "Medium",
+        "Resilience": (
             [
                 f"Start the {feature} flow with valid data.",
                 "Simulate a timeout, refresh, duplicate submit, or network interruption.",
                 "Return to the feature and verify the final state.",
             ],
             "The system prevents duplicate/partial inconsistent results and gives the user a recoverable state.",
-            context_refs,
         ),
-    ]
+        "Workflow": (
+            [f"Verify workflow step: {step}." for step in workflow_steps],
+            "Each transition follows the trained workflow and invalid transitions are not allowed.",
+        ),
+    }
 
-    if workflow_steps:
-        cases.append(
-            _case(
-                f"TC-{feature_key}-006",
-                f"Workflow transitions follow the trained diagram for {feature}",
-                "Workflow",
-                "High",
-                [f"Verify workflow step: {step}." for step in workflow_steps],
-                "Each transition follows the trained workflow and invalid transitions are not allowed.",
-                context_refs,
-            )
-        )
+    active_types = load_test_case_types()
+    cases: list[dict] = []
+    case_index = 1
+    workflow_included = False
 
-    start_index = 7 if workflow_steps else 6
+    for type_def in active_types:
+        if not type_def.get("enabled", True):
+            continue
+        condition = type_def.get("condition")
+        case_type = type_def.get("type", "")
+        priority = type_def.get("priority", "Medium")
+
+        if condition == "has_workflow" and not workflow_steps:
+            continue
+
+        if case_type == "Workflow":
+            workflow_included = True
+
+        steps_hint = type_def.get("steps_hint")
+        if steps_hint:
+            steps = [steps_hint]
+            expected = f"The system satisfies the {case_type} criteria for {feature}."
+        elif case_type in type_steps_map:
+            steps, expected = type_steps_map[case_type]
+        else:
+            steps = [
+                f"Open the {feature} flow.",
+                f"Execute the {case_type.lower()} scenario for {feature}.",
+                "Observe the system response.",
+            ]
+            expected = f"The system handles the {case_type.lower()} scenario correctly for {feature}."
+
+        title_map: dict[str, str] = {
+            "Positive": f"{actor} can complete the happy path for {feature}",
+            "Negative": f"Required validation is shown for missing or invalid data in {feature}",
+            "Boundary": f"Boundary values are handled correctly for {feature}",
+            "Permission": f"Unauthorized access is prevented for {feature}",
+            "Resilience": f"System handles interruption or failure during {feature}",
+            "Workflow": f"Workflow transitions follow the trained diagram for {feature}",
+        }
+        title = title_map.get(case_type) or type_def.get("title_template", f"{case_type} scenario for {feature}")
+        cases.append(_case(f"TC-{feature_key}-{case_index:03d}", title, case_type, priority, steps, expected, context_refs))
+        case_index += 1
+
+    start_index = case_index
     for index, criterion in enumerate(criteria, start=start_index):
         cases.append(
             _case(
@@ -1686,6 +1798,16 @@ def build_test_cases(payload: dict) -> dict:
                 context_refs,
             )
         )
+
+    # Deduplicate cases with identical titles (case-insensitive)
+    seen_titles: set[str] = set()
+    unique_cases = []
+    for case in cases:
+        title_key = case.get("title", "").lower().strip()
+        if title_key not in seen_titles:
+            seen_titles.add(title_key)
+            unique_cases.append(case)
+    cases = unique_cases
 
     response = {
         "status": "success",
@@ -1849,7 +1971,9 @@ def extract_file_text(filename: str, data: bytes) -> str:
         raise ValueError(f"Unsupported file type: {suffix or 'unknown'}")
 
     if suffix in IMAGE_EXTENSIONS:
-        raise ValueError("Image diagram uploaded but OCR/vision is not configured, so the content cannot be read yet.")
+        media_type_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+        media_type = media_type_map.get(suffix, "image/png")
+        return _extract_image_via_vision(data, media_type)
 
     if suffix == ".pdf":
         return _extract_pdf(data)
@@ -2026,13 +2150,28 @@ async def knowledge_upload_api(request: Request) -> JSONResponse:
                 status_code=413,
             )
         if suffix in IMAGE_EXTENSIONS:
+            media_type_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+            media_type = media_type_map.get(suffix, "image/png")
+            try:
+                extracted_text = _extract_image_via_vision(data, media_type)
+                item = add_knowledge(
+                    title=str(form.get("title") or filename),
+                    knowledge_type=str(form.get("type") or "diagram"),
+                    text=extracted_text,
+                    source=filename,
+                    status=READY,
+                    status_message="Extracted via vision model and indexed.",
+                )
+                return JSONResponse({"item": item})
+            except Exception:
+                pass
             item = add_knowledge(
                 title=str(form.get("title") or filename),
                 knowledge_type=str(form.get("type") or "diagram"),
-                text=f"Image diagram file uploaded: {filename}. OCR/vision is not configured in this local version, so the visual content was not extracted.",
+                text=f"Image diagram file uploaded: {filename}. Configure LLM_VISION_ENABLED=true with a vision-capable model to extract content automatically.",
                 source=filename,
                 status=NEEDS_REVIEW,
-                status_message="Saved, but not indexed. Export diagram as SVG/drawio/BPMN/Mermaid/PDF or connect OCR/vision.",
+                status_message="Saved, but not indexed. Export diagram as SVG/drawio/BPMN/Mermaid/PDF or set LLM_VISION_ENABLED=true.",
                 readable=False,
             )
             return JSONResponse({"item": item}, status_code=202)
@@ -2063,6 +2202,52 @@ async def knowledge_upload_api(request: Request) -> JSONResponse:
     return JSONResponse({"item": item})
 
 
+async def config_types_api(request: Request) -> JSONResponse:
+    return JSONResponse({"types": load_test_case_types()})
+
+
+async def export_csv_api(request: Request) -> Response:
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+    test_cases = body.get("test_cases", [])
+    feature = body.get("feature", "testcases")
+
+    sio = io.StringIO()
+    writer = csv.writer(sio)
+    writer.writerow(["ID", "Title", "Type", "Priority", "Preconditions", "Test Data", "Steps", "Expected Result", "References"])
+
+    for tc in test_cases:
+        steps = tc.get("steps") or []
+        preconditions = tc.get("preconditions") or []
+        test_data = tc.get("test_data") or []
+        references = tc.get("references") or []
+        writer.writerow([
+            tc.get("id", ""),
+            tc.get("title", ""),
+            tc.get("type", ""),
+            tc.get("priority", ""),
+            "\n".join(preconditions),
+            "\n".join(test_data),
+            "\n".join(steps),
+            tc.get("expected_result", ""),
+            "\n".join(references),
+        ])
+
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M")
+    filename = f"testcases-{timestamp}.csv"
+    # UTF-8 BOM so Google Sheets detects encoding correctly
+    content = "﻿" + sio.getvalue()
+
+    return Response(
+        content=content.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 app.add_route("/", chat_page, methods=["GET"])
 app.add_route("/invocations", chat_page, methods=["GET"])
 app.add_route("/chat", chat_api, methods=["POST"])
@@ -2071,6 +2256,8 @@ app.add_route("/knowledge", knowledge_list_api, methods=["GET"])
 app.add_route("/knowledge", knowledge_create_api, methods=["POST"])
 app.add_route("/knowledge/upload", knowledge_upload_api, methods=["POST"])
 app.add_route("/knowledge/action", knowledge_action_api, methods=["POST"])
+app.add_route("/export/csv", export_csv_api, methods=["POST"])
+app.add_route("/config/types", config_types_api, methods=["GET"])
 
 
 @app.entrypoint
