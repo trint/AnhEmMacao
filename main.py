@@ -57,6 +57,7 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 READY = "READY"
 NEEDS_REVIEW = "NEEDS_REVIEW"
 FAILED = "FAILED"
+AUTO_LEARNED_TYPE = "auto-learned"
 
 TESTCASE_TYPES_FILE = DATA_DIR / "testcase_types.json"
 
@@ -414,7 +415,7 @@ CHAT_HTML = """<!doctype html>
           </div>
           <label for="criteria">Acceptance criteria</label>
           <textarea id="criteria" placeholder="Acceptance criteria"></textarea>
-          <button id="send" type="submit">Generate from trained knowledge</button>
+          <button id="send" type="submit">Generate test cases</button>
         </form>
       </section>
 
@@ -1000,10 +1001,17 @@ def add_knowledge(
         }
         items.insert(0, item)
         _write_knowledge_unlocked(items[:100])
+
+    # Persist durable, shared copy to the Memory Service (best-effort) once the item is
+    # readable and indexed, so trained knowledge survives restarts and is shared across replicas.
+    if status == READY and readable:
+        _memory_remember([f"{item['title']}\n{normalized[:8000]}"])
     return item
 
 
 def update_knowledge_item(knowledge_id: str, action: str, text: str | None = None) -> dict | None:
+    became_ready = False
+    result: dict | None = None
     with _knowledge_lock():
         items = _read_knowledge_unlocked()
         index = next((idx for idx, item in enumerate(items) if item.get("id") == knowledge_id), None)
@@ -1040,6 +1048,7 @@ def update_knowledge_item(knowledge_id: str, action: str, text: str | None = Non
             item["chunks"] = _chunk_text(item.get("text", ""))
             item["status_message"] = "Reviewed and indexed."
             item["reviewed_at"] = now
+            became_ready = True
         elif action in {"mark-review", "save-review"}:
             item["status"] = NEEDS_REVIEW
             item["readable"] = False
@@ -1051,7 +1060,12 @@ def update_knowledge_item(knowledge_id: str, action: str, text: str | None = Non
 
         items[index] = item
         _write_knowledge_unlocked(items)
-        return item
+        result = item
+
+    # Persist to the Memory Service outside the lock when a reviewed item becomes READY.
+    if became_ready and result:
+        _memory_remember([f"{result.get('title', '')}\n{_normalize_multiline(result.get('text', ''))[:8000]}"])
+    return result
 
 
 def retrieve_context(query: str, limit: int = 4) -> list[dict]:
@@ -1088,7 +1102,18 @@ def retrieve_context(query: str, limit: int = 4) -> list[dict]:
         grouped[item_id]["match_score"] += score
 
     results = sorted(grouped.values(), key=lambda item: item.get("match_score", 0), reverse=True)
-    return results[:limit]
+    results = results[:limit]
+
+    # Augment with durable, shared knowledge from the Memory Service (best-effort).
+    if _memory_enabled():
+        seen_titles = {r.get("title") for r in results}
+        for mem_item in _memory_recall(query, limit=limit):
+            if mem_item.get("title") not in seen_titles:
+                results.append(mem_item)
+                seen_titles.add(mem_item.get("title"))
+        results = results[:limit]
+
+    return results
 
 
 def summarize_context(items: list[dict]) -> str:
@@ -1236,6 +1261,143 @@ def _parse_llm_json(content: str) -> dict:
     raise ValueError(f"Could not parse LLM JSON response: {last_error}")
 
 
+# --- Persistent long-term memory (AgentBase Memory Service) ---
+# Stores auto-learned QC knowledge durably and shared across replicas, replacing the
+# ephemeral local knowledge.json. All calls are best-effort: any failure falls back to
+# local-only behavior so the agent never breaks.
+MEMORY_RECORDS_API = "https://agentbase.api.vngcloud.vn/memory/memories"
+_memory_client = None
+
+
+def _memory_enabled() -> bool:
+    return bool(os.getenv("MEMORY_ID") and os.getenv("MEMORY_STRATEGY_ID"))
+
+
+def _memory_namespace() -> str:
+    strategy = os.getenv("MEMORY_STRATEGY_ID", "")
+    actor = os.getenv("MEMORY_ACTOR", "qc-shared")
+    return f"/strategies/{strategy}/actors/{actor}"
+
+
+def _memory_token() -> str | None:
+    global _memory_client
+    try:
+        if _memory_client is None:
+            from greennode_agentbase.memory import MemoryClient
+
+            _memory_client = MemoryClient()
+        return _memory_client._get_oauth2_token_sync()
+    except Exception:
+        return None
+
+
+def _memory_remember(facts: list[str]) -> bool:
+    if not _memory_enabled():
+        return False
+    facts = [f.strip() for f in facts if f and f.strip()]
+    if not facts:
+        return False
+    token = _memory_token()
+    if not token:
+        return False
+    try:
+        import httpx
+
+        mid = os.getenv("MEMORY_ID")
+        resp = httpx.post(
+            f"{MEMORY_RECORDS_API}/{mid}/memory-records:insert-directly",
+            params={"namespace": _memory_namespace()},
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"memoryRecords": facts},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception:
+        return False
+
+
+def _memory_recall(query: str, limit: int = 4) -> list[dict]:
+    """Semantic search persistent memory; return items shaped like local knowledge context items."""
+    if not _memory_enabled() or not query.strip():
+        return []
+    token = _memory_token()
+    if not token:
+        return []
+    try:
+        import httpx
+
+        mid = os.getenv("MEMORY_ID")
+        resp = httpx.post(
+            f"{MEMORY_RECORDS_API}/{mid}/memory-records:search",
+            params={"namespace": _memory_namespace()},
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"query": query, "limit": max(5, limit)},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        records = resp.json()
+        if not isinstance(records, list):
+            records = records.get("listData") or records.get("content") or []
+        items = []
+        for rec in records[:limit]:
+            text = _normalize_multiline(rec.get("memory", ""))
+            if not text:
+                continue
+            items.append(
+                {
+                    "id": f"MEM-{rec.get('id')}",
+                    "title": (text.split(".")[0] or "Memory")[:80],
+                    "type": AUTO_LEARNED_TYPE,
+                    "source": "memory-service",
+                    "text": text,
+                    "matched_chunks": [
+                        {
+                            "chunk_id": "mem",
+                            "text": text,
+                            "preview": _preview(text),
+                            "score": rec.get("score"),
+                        }
+                    ],
+                    "match_score": rec.get("score") or 0,
+                }
+            )
+        return items
+    except Exception:
+        return []
+
+
+def _auto_learn(feature: str, learned_summary: str) -> dict | None:
+    """Persist the model's distilled understanding of a feature so it can be reused
+    as business context next time. Only runs after a self-generated (no-context) run."""
+    feature = _clean_text(feature)
+    summary = _normalize_multiline(learned_summary)
+    if not feature or feature == "Unspecified feature" or len(summary) < 40:
+        return None
+
+    title = f"Auto-learned: {feature}"
+    # Dedup: do not create a second auto-learned record for the same feature.
+    for item in _read_knowledge():
+        if item.get("type") == AUTO_LEARNED_TYPE and item.get("title") == title:
+            return None
+
+    # add_knowledge() persists the READY item to the Memory Service (best-effort), so it
+    # survives restarts and is shared across replicas. retrieve_context already confirmed no
+    # match existed for this feature before self-generation, so this will not create duplicates.
+    try:
+        return add_knowledge(
+            title=title,
+            knowledge_type=AUTO_LEARNED_TYPE,
+            text=summary,
+            source="self-learn",
+            status=READY,
+            status_message="Auto-learned from self-generated test cases.",
+            readable=True,
+        )
+    except Exception:
+        return None
+
+
 def _enhance_with_llm(response: dict, payload: dict, context_items: list[dict]) -> dict:
     status = llm_status()
     if not status["configured"]:
@@ -1251,24 +1413,37 @@ def _enhance_with_llm(response: dict, payload: dict, context_items: list[dict]) 
         model = status["model"]
         wire_api = status["wire_api"]
         context = _context_for_llm(context_items)
+        has_context = bool(context_items) and bool(context.strip())
         fallback_cases = response.get("test_cases", [])
+        try:
+            timeout_s = float(os.getenv("LLM_TIMEOUT", "120") or 120)
+        except ValueError:
+            timeout_s = 120.0
+
+        if has_context:
+            instructions = (
+                "You are a senior QC test design assistant. Use the filtered business context to improve "
+                "and ground the provided baseline test cases. Prefer facts from the context and do not "
+                "invent business rules that contradict it. Return ONLY valid JSON with keys test_cases "
+                "and notes."
+            )
+            context_block = context
+        else:
+            instructions = (
+                "You are a senior QC test design assistant. No trained business context is available for "
+                "this request, so generate the test cases yourself from your own QC expertise. Design "
+                "comprehensive, realistic test cases for the feature using standard QC best practices — "
+                "cover positive, negative, boundary, permission/security, resilience, and any "
+                "feature-specific scenarios. Use the baseline test cases only as a starting point and "
+                "expand well beyond them. Clearly state any assumptions you make in the notes. Return "
+                "ONLY valid JSON with keys test_cases, notes, and learned_summary. The learned_summary "
+                "is a concise 3-8 sentence distilled understanding of this feature (purpose, key actors, "
+                "main flows, business rules, and assumptions used) written so it can be reused as "
+                "business context next time."
+            )
+            context_block = "No trained context. Generate from your own QC expertise."
 
         prompt_text = (
-            "You are a senior QC test design assistant. Use the filtered business context to improve "
-            "the provided test cases.\n\n"
-            "RULES:\n"
-            "1. Return ONLY valid JSON with exactly two keys: test_cases (array) and notes (array of strings).\n"
-            "2. Each test case must include: id, title, type, priority, preconditions (array), "
-            "test_data (array), steps (array), expected_result (string), references (array).\n"
-            "3. Each step must be a specific, executable action — never write vague steps like "
-            "'Perform action' or 'Check result'.\n"
-            "4. Each test case must reference specific conditions, fields, or rules from the business context.\n"
-            "5. Each test case must have at least 3 steps.\n"
-            "6. Do not invent facts outside the context.\n"
-            "7. Output compact JSON with no markdown fences.\n\n"
-            f"Feature payload:\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
-            f"Filtered context chunks:\n{context or 'No context matched.'}\n\n"
-            f"Baseline test cases to improve:\n{json.dumps(fallback_cases, ensure_ascii=False, indent=2)}"
         )
 
         headers = {
@@ -1294,7 +1469,7 @@ def _enhance_with_llm(response: dict, payload: dict, context_items: list[dict]) 
                     "temperature": 0.2,
                     "max_output_tokens": 8000,
                 },
-                timeout=45,
+                timeout=timeout_s,
             )
         else:
             llm_response = httpx.post(
@@ -1314,7 +1489,7 @@ def _enhance_with_llm(response: dict, payload: dict, context_items: list[dict]) 
                     ],
                     "temperature": 0.2,
                 },
-                timeout=45,
+                timeout=timeout_s,
             )
         llm_response.raise_for_status()
         llm_payload = llm_response.json()
@@ -1342,8 +1517,15 @@ def _enhance_with_llm(response: dict, payload: dict, context_items: list[dict]) 
                 raise ValueError("LLM response did not include valid test case objects.")
             response["test_cases"] = sanitized_cases
             response["notes"] = _coerce_list(parsed.get("notes")) or response.get("notes", [])
-            response["ai_mode"] = "llm-rag"
+            response["ai_mode"] = "llm-rag" if has_context else "llm-generate"
             response["ai_status"] = status
+            if not has_context:
+                learned_item = _auto_learn(response.get("feature", ""), parsed.get("learned_summary", ""))
+                if learned_item:
+                    response["auto_learned"] = {
+                        "id": learned_item.get("id"),
+                        "title": learned_item.get("title"),
+                    }
             return response
         raise ValueError("LLM response did not include test_cases.")
     except Exception as exc:
