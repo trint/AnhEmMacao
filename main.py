@@ -352,6 +352,33 @@ CHAT_HTML = """<!doctype html>
       .row, .actions { grid-template-columns: 1fr; }
       .empty { min-height: 240px; }
     }
+    /* ---------- Animations ---------- */
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes pop { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+    .hero { animation: fadeInUp .5s ease both; }
+    aside .panel { animation: fadeInUp .5s ease both; }
+    aside .panel:nth-of-type(1) { animation-delay: .05s; }
+    aside .panel:nth-of-type(2) { animation-delay: .12s; }
+    aside .panel:nth-of-type(3) { animation-delay: .19s; }
+    .summary { animation: fadeInUp .45s ease both; }
+    .case { animation: fadeInUp .5s ease both; }
+    .knowledge-item { animation: fadeIn .35s ease both; }
+    .pill, .kb-status { animation: pop .3s ease both; }
+    .empty-art { animation: floaty 3s ease-in-out infinite; }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 4px solid #d7e4e1;
+      border-top-color: var(--brand);
+      animation: spin .8s linear infinite;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
   </style>
 </head>
 <body>
@@ -464,8 +491,8 @@ CHAT_HTML = """<!doctype html>
         knowledgeList.innerHTML = '<div class="small">Chưa có kiến thức nào. Hãy train tài liệu đầu tiên 👆</div>';
         return;
       }
-      knowledgeList.innerHTML = items.map(item => `
-        <div class="knowledge-item" data-id="${escapeHtml(item.id)}">
+      knowledgeList.innerHTML = items.map((item, i) => `
+        <div class="knowledge-item" data-id="${escapeHtml(item.id)}" style="animation-delay:${Math.min(i * 45, 360)}ms">
           <strong>${escapeHtml(item.title)}<span class="kb-status ${String(item.status || "READY").toLowerCase()}">${escapeHtml(item.status || "READY")}</span></strong>
           <div class="small">${escapeHtml(item.type)} · ${escapeHtml(item.source)} · ${item.text_length} chars · ${item.chunk_count || 0} chunks</div>
           <div class="small">${escapeHtml(item.status_message || "")}</div>
@@ -550,8 +577,8 @@ CHAT_HTML = """<!doctype html>
           <div>${escapeHtml(data.context_summary || "Không có tóm tắt ngữ cảnh.")}</div>
         </section>
         <section class="cases">
-          ${cases.map(testCase => `
-            <article class="case">
+          ${cases.map((testCase, i) => `
+            <article class="case" style="animation-delay:${Math.min(i * 60, 600)}ms">
               <h3>${escapeHtml(testCase.id)} · ${escapeHtml(testCase.title)}</h3>
               <div class="meta">
                 <span class="pill">${escapeHtml(testCase.type)}</span>
@@ -591,6 +618,9 @@ CHAT_HTML = """<!doctype html>
         if (!response.ok) throw new Error(data.error || "Training failed");
         await loadKnowledge();
         statusEl.textContent = "Đã train ✓";
+        // Xoá nội dung đã nhập sau khi train thành công.
+        document.querySelector("#knowledge-title").value = "";
+        knowledgeText.value = "";
       } catch (error) {
         statusEl.textContent = "Lỗi";
         output.className = "error";
@@ -618,6 +648,9 @@ CHAT_HTML = """<!doctype html>
         if (!response.ok) throw new Error(data.error || "Upload failed");
         await loadKnowledge();
         statusEl.textContent = `Đã lưu: ${data.item?.status || "READY"}`;
+        // Xoá cache file đã chọn để lần upload sau không dính file cũ.
+        fileInput.value = "";
+        document.querySelector("#knowledge-title").value = "";
       } catch (error) {
         statusEl.textContent = "Lỗi";
         output.className = "error";
@@ -632,7 +665,7 @@ CHAT_HTML = """<!doctype html>
       send.disabled = true;
       statusEl.textContent = "Đang sinh...";
       output.className = "empty";
-      output.textContent = "⏳ Đang sinh test case từ knowledge base...";
+      output.innerHTML = '<div class="spinner"></div><div>Đang sinh test case từ knowledge base...</div>';
 
       const payload = {
         feature: document.querySelector("#feature").value,
