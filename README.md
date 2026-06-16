@@ -275,6 +275,8 @@ Nếu không cấu hình key nào, agent vẫn chạy bằng rule-based generati
 
 Khi cấu hình, knowledge `READY` và phần tự học được lưu lên AgentBase Memory Service (best-effort), tồn tại qua restart và chia sẻ giữa các replica. Mọi lỗi đều fallback về knowledge local nên agent không bao giờ gãy.
 
+> **Khôi phục sau restart:** lần đầu đọc knowledge sau khi khởi động (mở `/knowledge` hoặc sinh test case), nếu file local `.agentbase/knowledge.json` trống (do volume runtime là ephemeral), agent tự động tải lại toàn bộ record từ Memory Service về local — nên danh sách knowledge và RAG hiển thị/dùng lại đầy đủ sau khi container restart. Vì vậy **bắt buộc set `MEMORY_ID` và `MEMORY_STRATEGY_ID` trong env của runtime deploy** (file `.env` bị `.dockerignore`/`.gitignore` loại bỏ, runtime không tự đọc).
+
 | Biến | Mô tả |
 |------|-------|
 | `MEMORY_ID` | ID memory store |

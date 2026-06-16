@@ -1014,6 +1014,7 @@ def update_knowledge_item(knowledge_id: str, action: str, text: str | None = Non
 
 
 def retrieve_context(query: str, limit: int = 4) -> list[dict]:
+    _hydrate_from_memory()
     query_keywords = _keywords(query)
     scored = []
     for item in _read_knowledge():
@@ -1310,6 +1311,86 @@ def _memory_recall(query: str, limit: int = 4) -> list[dict]:
         return items
     except Exception:
         return []
+
+
+_memory_hydrated = False
+
+
+def _memory_list(limit: int = 100) -> list[dict]:
+    """List every persisted memory record for this namespace. Used to rebuild the
+    local knowledge store after a restart wipes the ephemeral .agentbase volume."""
+    if not _memory_enabled():
+        return []
+    token = _memory_token()
+    if not token:
+        return []
+    try:
+        import httpx
+
+        mid = os.getenv("MEMORY_ID")
+        resp = httpx.get(
+            f"{MEMORY_RECORDS_API}/{mid}/memory-records",
+            params={"namespace": _memory_namespace(), "limit": limit},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        records = resp.json()
+        if not isinstance(records, list):
+            records = records.get("listData") or records.get("content") or []
+        return [rec for rec in records if isinstance(rec, dict)]
+    except Exception:
+        return []
+
+
+def _hydrate_from_memory() -> None:
+    """Restore trained knowledge from the durable Memory Service into the local store
+    on first access. The runtime's local .agentbase volume is ephemeral, so after a
+    restart the local knowledge.json is empty even though the Memory Service still holds
+    every READY item — this is why trained knowledge appeared to be "lost" on the UI.
+    Runs at most once per process and is fully best-effort: any failure leaves the
+    request path untouched."""
+    global _memory_hydrated
+    if _memory_hydrated or not _memory_enabled():
+        return
+    _memory_hydrated = True  # mark first so a failure never re-runs on every request
+    records = _memory_list(limit=100)
+    if not records:
+        return
+    try:
+        with _knowledge_lock():
+            items = _read_knowledge_unlocked()
+            seen = {_normalize_multiline(it.get("text", "")) for it in items}
+            restored = []
+            for rec in records:
+                raw = _normalize_multiline(rec.get("memory", ""))
+                if not raw:
+                    continue
+                title, _, body = raw.partition("\n")
+                body = body.strip() or raw
+                if body in seen:
+                    continue
+                seen.add(body)
+                restored.append(
+                    {
+                        "id": f"MEM-{rec.get('id')}",
+                        "title": _clean_text(title)[:120] or "Restored memory",
+                        "type": AUTO_LEARNED_TYPE,
+                        "source": "memory-service",
+                        "text": body,
+                        "text_length": len(body),
+                        "chunks": _chunk_text(body),
+                        "preview": _preview(body),
+                        "status": READY,
+                        "status_message": "Restored from Memory Service.",
+                        "readable": True,
+                        "created_at": rec.get("created_at") or datetime.now().isoformat(),
+                    }
+                )
+            if restored:
+                _write_knowledge_unlocked((items + restored)[:100])
+    except Exception:
+        return
 
 
 def _auto_learn(feature: str, learned_summary: str) -> dict | None:
@@ -1827,6 +1908,7 @@ async def ai_status_api(request: Request) -> JSONResponse:
 
 async def knowledge_list_api(request: Request) -> JSONResponse:
     items = []
+    _hydrate_from_memory()
     try:
         knowledge_items = _read_knowledge()
     except RuntimeError as exc:
