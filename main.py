@@ -1549,7 +1549,33 @@ def _enhance_with_llm(response: dict, payload: dict, context_items: list[dict]) 
             )
             context_block = "No trained context. Generate from your own QC expertise."
 
+        feature = _clean_text(response.get("feature") or payload.get("feature")) or "Unspecified feature"
+        actor = _clean_text(response.get("actor") or payload.get("actor") or "User")
+        platform = _clean_text(response.get("platform") or payload.get("platform") or "Target application")
+        criteria = _split_acceptance_criteria(payload.get("acceptance_criteria") or payload.get("criteria"))
+        criteria_block = "\n".join(f"- {c}" for c in criteria) if criteria else "None provided."
+        baseline_json = json.dumps(fallback_cases, ensure_ascii=False, indent=2)
+        learned_line = ',\n  "learned_summary": "<3-8 sentence reusable summary>"' if not has_context else ""
         prompt_text = (
+            f"{instructions}\n\n"
+            f"Feature: {feature}\n"
+            f"Actor: {actor}\n"
+            f"Platform: {platform}\n"
+            f"Acceptance criteria:\n{criteria_block}\n\n"
+            f"Business context:\n{context_block}\n\n"
+            "Baseline rule-based test cases (JSON array) to use as a starting point and expand well beyond:\n"
+            f"{baseline_json}\n\n"
+            "Return ONLY a single valid JSON object (no markdown fences) with this exact schema:\n"
+            "{\n"
+            '  "test_cases": [\n'
+            '    {"id": "string", "title": "string", "type": "string", '
+            '"priority": "High|Medium|Low", "preconditions": ["string"], '
+            '"test_data": ["string"], "steps": ["string"], '
+            '"expected_result": "string", "references": ["string"]}\n'
+            "  ],\n"
+            '  "notes": ["string"]'
+            f"{learned_line}\n"
+            "}"
         )
 
         headers = {
