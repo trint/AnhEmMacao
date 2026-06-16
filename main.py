@@ -88,349 +88,364 @@ CHAT_HTML = """<!doctype html>
   <style>
     :root {
       color-scheme: light;
-      --bg: #f6f7fb;
+      --bg: #eef1f8;
       --panel: #ffffff;
-      --text: #172033;
-      --muted: #667085;
-      --line: #d8dee9;
-      --brand: #0f766e;
-      --brand-dark: #115e59;
+      --text: #1a2233;
+      --muted: #6b7385;
+      --line: #e3e8f0;
+      --brand: #0d9488;
+      --brand-dark: #0f766e;
+      --brand-2: #6366f1;
       --soft: #eef7f6;
       --warn: #fff7e6;
       --danger: #b42318;
-      --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+      --shadow: 0 1px 3px rgba(16,24,40,.06), 0 1px 2px rgba(16,24,40,.04);
+      --shadow-lg: 0 14px 34px -14px rgba(16,24,40,.22);
+      --radius: 14px;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      background: var(--bg);
+      background:
+        radial-gradient(1100px 480px at -8% -10%, #d9f3ef 0%, transparent 55%),
+        radial-gradient(1000px 500px at 112% -4%, #e7e8ff 0%, transparent 52%),
+        var(--bg);
       color: var(--text);
-      font: 15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font: 15px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
     }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-thumb { background: #cfd6e4; border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+    ::-webkit-scrollbar-thumb:hover { background: #b6bfd1; background-clip: padding-box; }
     .shell {
       min-height: 100vh;
       display: grid;
-      grid-template-columns: minmax(340px, 460px) 1fr;
+      grid-template-columns: minmax(340px, 440px) 1fr;
     }
     aside {
-      background: var(--panel);
+      background: rgba(255,255,255,.82);
+      backdrop-filter: blur(6px);
       border-right: 1px solid var(--line);
-      padding: 24px;
+      padding: 18px;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
       overflow: auto;
     }
-    main {
-      padding: 24px;
-      overflow: auto;
+    main { padding: 24px 28px; overflow: auto; }
+    .hero {
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 135%);
+      color: #fff;
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow-lg);
     }
-    h1 {
-      margin: 0;
-      font-size: 26px;
-      line-height: 1.15;
-      letter-spacing: 0;
-    }
+    .hero h1 { margin: 0; font-size: 21px; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+    .hero .subtitle { margin: 8px 0 0; color: rgba(255,255,255,.88); font-size: 13px; }
     h2 {
-      margin: 0 0 10px;
-      font-size: 16px;
-      letter-spacing: 0;
+      margin: 0 0 12px;
+      font-size: 15px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-    .subtitle {
-      margin: 6px 0 0;
-      color: var(--muted);
-    }
+    .subtitle { margin: 6px 0 0; color: var(--muted); }
     .panel {
       border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 14px;
-      background: #fff;
+      border-radius: var(--radius);
+      padding: 16px;
+      background: var(--panel);
       box-shadow: var(--shadow);
     }
     label {
       display: block;
-      margin: 0 0 7px;
+      margin: 12px 0 6px;
       color: #344054;
       font-weight: 650;
       font-size: 13px;
     }
+    .panel > label:first-of-type, form > label:first-of-type { margin-top: 0; }
     input, textarea, select {
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 10px 11px;
+      border-radius: 10px;
+      padding: 10px 12px;
       background: #fff;
       color: var(--text);
       font: inherit;
       outline: none;
+      transition: border-color .15s, box-shadow .15s;
     }
-    textarea {
-      min-height: 96px;
-      resize: vertical;
-    }
+    textarea { min-height: 92px; resize: vertical; }
     input:focus, textarea:focus, select:focus {
       border-color: var(--brand);
-      box-shadow: 0 0 0 3px rgba(15, 118, 110, .14);
+      box-shadow: 0 0 0 3px rgba(13,148,136,.16);
     }
-    .row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-    .actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
+    input:disabled, textarea:disabled { background: #f4f6fa; color: var(--muted); cursor: not-allowed; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
     button {
       width: 100%;
       border: 0;
-      border-radius: 8px;
-      padding: 11px 13px;
-      background: var(--brand);
+      border-radius: 10px;
+      padding: 11px 14px;
+      background: linear-gradient(135deg, var(--brand), var(--brand-dark));
       color: #fff;
-      font-weight: 750;
+      font-weight: 700;
       cursor: pointer;
+      transition: transform .08s ease, box-shadow .15s, filter .15s;
+      box-shadow: 0 1px 2px rgba(13,148,136,.25);
     }
-    button.secondary {
-      background: #344054;
-    }
-    button.light {
-      background: #eef2f6;
-      color: #243043;
-    }
-    button:hover { background: var(--brand-dark); }
-    button.secondary:hover { background: #1d2939; }
-    button.light:hover { background: #dfe5ee; }
-    button:disabled {
-      opacity: .65;
-      cursor: not-allowed;
-    }
+    button:hover { filter: brightness(1.06); box-shadow: 0 8px 18px -7px rgba(13,148,136,.6); }
+    button:active { transform: translateY(1px); }
+    button.secondary { background: linear-gradient(135deg, #475569, #334155); box-shadow: none; }
+    button.secondary:hover { filter: brightness(1.08); }
+    button.light { background: #eef2f7; color: #2b3648; box-shadow: none; }
+    button.light:hover { background: #e2e8f1; filter: none; }
+    button:disabled { opacity: .6; cursor: not-allowed; transform: none; filter: none; box-shadow: none; }
+    #send { margin-top: 14px; }
+    #train-file { margin-top: 12px; }
     .hint {
-      border: 1px solid #f7d38b;
+      border: 1px solid #f3d79a;
       background: var(--warn);
       color: #7a4b00;
-      border-radius: 8px;
-      padding: 11px;
-      font-size: 13px;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 12.5px;
+      line-height: 1.45;
     }
+    .hint.ok { border-color: #a7e6cf; background: #eafaf2; color: #067647; }
     .toolbar {
       display: flex;
-      justify-content: space-between;
-      gap: 16px;
       align-items: center;
-      margin-bottom: 16px;
+      gap: 14px;
+      margin-bottom: 18px;
     }
+    .toolbar strong { font-size: 17px; }
     .status {
       color: var(--muted);
       font-size: 13px;
-    }
-    .empty {
-      min-height: calc(100vh - 48px);
-      display: grid;
-      place-items: center;
-      color: var(--muted);
-      text-align: center;
-      border: 1px dashed var(--line);
-      border-radius: 8px;
-      background: rgba(255,255,255,.65);
-      padding: 24px;
-    }
-    .summary {
-      background: var(--soft);
-      border: 1px solid #b7dfda;
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
-    }
-    .summary h2 {
-      margin: 0 0 6px;
-      font-size: 18px;
-    }
-    .cases {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
-      gap: 14px;
-    }
-    .case, .knowledge-item {
-      background: var(--panel);
+      background: #fff;
       border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 15px;
-      box-shadow: var(--shadow);
-    }
-    .case h3 {
-      margin: 0 0 10px;
-      font-size: 16px;
-      line-height: 1.3;
-    }
-    .meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-    .pill {
       border-radius: 999px;
-      background: #f2f4f7;
-      color: #344054;
-      padding: 4px 9px;
-      font-size: 12px;
+      padding: 4px 12px;
       font-weight: 650;
     }
-    .pill.high { background: #fee4e2; color: #912018; }
+    .empty {
+      min-height: calc(100vh - 120px);
+      display: grid;
+      place-items: center;
+      align-content: center;
+      gap: 10px;
+      color: var(--muted);
+      text-align: center;
+      border: 2px dashed #cdd5e4;
+      border-radius: var(--radius);
+      background: rgba(255,255,255,.5);
+      padding: 40px;
+    }
+    .empty-art { font-size: 54px; line-height: 1; }
+    .summary {
+      background: linear-gradient(135deg, #ffffff, var(--soft));
+      border: 1px solid #cdeae6;
+      border-left: 5px solid var(--brand);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      margin-bottom: 18px;
+      box-shadow: var(--shadow);
+    }
+    .summary h2 { margin: 0 0 6px; font-size: 19px; color: var(--brand-dark); }
+    .cases {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 16px;
+    }
+    .case {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      transition: transform .12s, box-shadow .12s, border-color .12s;
+    }
+    .case:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: #cfe9e5; }
+    .case h3 { margin: 0 0 12px; font-size: 15px; line-height: 1.35; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .pill {
+      border-radius: 999px;
+      background: #eef2f7;
+      color: #344054;
+      padding: 4px 11px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid #e4e9f0;
+    }
+    .pill.high { background: #fee4e2; color: #912018; border-color: #fccfca; }
+    .pill.medium { background: #fff3d6; color: #8a5a00; border-color: #ffe2a8; }
+    .pill.low { background: #dcfae6; color: #067647; border-color: #b6f0cf; }
     .kb-status {
       display: inline-flex;
       align-items: center;
       border-radius: 999px;
-      padding: 3px 8px;
-      font-size: 11px;
+      padding: 2px 9px;
+      font-size: 10.5px;
       font-weight: 800;
+      letter-spacing: .03em;
       margin-left: 6px;
+      vertical-align: middle;
     }
-    .kb-status.ready {
-      background: #dcfae6;
-      color: #067647;
-    }
-    .kb-status.needs_review {
-      background: #fff1c2;
-      color: #7a4b00;
-    }
-    .kb-status.failed {
-      background: #fee4e2;
-      color: #912018;
-    }
+    .kb-status.ready { background: #dcfae6; color: #067647; }
+    .kb-status.needs_review { background: #fff1c2; color: #7a4b00; }
+    .kb-status.failed { background: #fee4e2; color: #912018; }
     .section-title {
-      margin: 12px 0 6px;
-      color: #344054;
-      font-weight: 750;
-      font-size: 13px;
+      margin: 14px 0 5px;
+      color: var(--brand-dark);
+      font-weight: 800;
+      font-size: 11.5px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
     }
-    ol, ul {
-      margin: 0;
-      padding-left: 20px;
-    }
+    ol, ul { margin: 0; padding-left: 20px; }
     li { margin: 4px 0; }
     .error {
       color: var(--danger);
       background: #fff1f0;
       border: 1px solid #fecdca;
-      border-radius: 8px;
-      padding: 12px;
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      font-weight: 600;
     }
     .knowledge-list {
       display: grid;
       gap: 10px;
-      max-height: 220px;
+      max-height: 260px;
       overflow: auto;
+      padding-right: 2px;
     }
     .knowledge-item {
-      padding: 10px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
       font-size: 13px;
+      transition: border-color .12s, box-shadow .12s;
     }
-    .knowledge-item strong {
-      display: block;
-      margin-bottom: 3px;
-    }
+    .knowledge-item:hover { border-color: #cfe9e5; box-shadow: var(--shadow); }
+    .knowledge-item strong { display: block; margin-bottom: 4px; font-size: 13.5px; }
     .item-actions {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 6px;
-      margin-top: 9px;
-    }
-    .item-actions button {
-      padding: 7px 8px;
-      font-size: 12px;
-    }
-    .review-box {
-      display: none;
       margin-top: 10px;
     }
-    .review-box.open {
-      display: block;
-    }
-    .review-box textarea {
-      min-height: 120px;
-      font-size: 13px;
-    }
-    .small {
-      color: var(--muted);
-      font-size: 12px;
-    }
+    .item-actions button { padding: 7px 8px; font-size: 12px; }
+    .review-box { display: none; margin-top: 10px; }
+    .review-box.open { display: block; }
+    .review-box textarea { min-height: 120px; font-size: 13px; }
+    .small { color: var(--muted); font-size: 12px; }
     @media (max-width: 900px) {
       .shell { grid-template-columns: 1fr; }
       aside { border-right: 0; border-bottom: 1px solid var(--line); }
       main { padding: 18px; }
       .row, .actions { grid-template-columns: 1fr; }
+      .empty { min-height: 240px; }
+    }
+    /* ---------- Animations ---------- */
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes pop { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+    .hero { animation: fadeInUp .5s ease both; }
+    aside .panel { animation: fadeInUp .5s ease both; }
+    aside .panel:nth-of-type(1) { animation-delay: .05s; }
+    aside .panel:nth-of-type(2) { animation-delay: .12s; }
+    aside .panel:nth-of-type(3) { animation-delay: .19s; }
+    .summary { animation: fadeInUp .45s ease both; }
+    .case { animation: fadeInUp .5s ease both; }
+    .knowledge-item { animation: fadeIn .35s ease both; }
+    .pill, .kb-status { animation: pop .3s ease both; }
+    .empty-art { animation: floaty 3s ease-in-out infinite; }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 4px solid #d7e4e1;
+      border-top-color: var(--brand);
+      animation: spin .8s linear infinite;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
     }
   </style>
 </head>
 <body>
   <div class="shell">
     <aside>
-      <div>
-        <h1>QC Test Case Agent</h1>
-        <p class="subtitle">Train bang tai lieu, workflow, diagram roi generate test case theo context do.</p>
+      <div class="hero">
+        <h1><span>🧪</span> QC Test Case Agent</h1>
+        <p class="subtitle">Train bằng tài liệu, workflow, diagram — rồi sinh test case bám sát ngữ cảnh đó.</p>
       </div>
-      <div class="hint" id="ai-status">AI: checking...</div>
+      <div class="hint" id="ai-status">AI: đang kiểm tra...</div>
 
       <section class="panel">
-        <h2>Training knowledge</h2>
-        <label for="knowledge-title">Document / workflow name</label>
-        <input id="knowledge-title" placeholder="Document / workflow name" />
-        <label for="knowledge-type">Type</label>
+        <h2>📚 Train kiến thức</h2>
+        <label for="knowledge-title">Tên tài liệu / workflow</label>
+        <input id="knowledge-title" placeholder="VD: Luồng thanh toán hóa đơn" />
+        <label for="knowledge-type">Loại</label>
         <select id="knowledge-type">
           <option value="workflow">Workflow</option>
           <option value="diagram">Diagram</option>
-          <option value="requirement">Requirement document</option>
+          <option value="requirement">Tài liệu yêu cầu</option>
           <option value="business-rule">Business rule</option>
         </select>
-        <label for="knowledge-text">Paste content for documents/workflows</label>
-        <textarea id="knowledge-text" placeholder="Paste requirement, workflow, rules, or process text here."></textarea>
+        <label for="knowledge-text">Nội dung (paste cho tài liệu/workflow)</label>
+        <textarea id="knowledge-text" placeholder="Dán yêu cầu, workflow, rule hoặc mô tả quy trình vào đây."></textarea>
         <div class="actions">
-          <button id="train-text" type="button">Train text</button>
-          <button id="refresh-knowledge" class="light" type="button">Refresh</button>
+          <button id="train-text" type="button">＋ Train text</button>
+          <button id="refresh-knowledge" class="light" type="button">↻ Làm mới</button>
         </div>
-        <label for="knowledge-file">Upload file</label>
+        <label for="knowledge-file">Hoặc upload file</label>
         <input id="knowledge-file" type="file" />
-        <button id="train-file" class="secondary" type="button">Train file</button>
-        <div class="hint" id="training-hint">Use paste for docs/workflows. Use upload for diagrams. Image-only PNG/JPG/WebP will be saved as NEEDS_REVIEW until OCR/vision is connected.</div>
+        <button id="train-file" class="secondary" type="button">⬆ Train từ file</button>
+        <div class="hint" id="training-hint">Dùng paste cho tài liệu/workflow. Upload cho diagram. Ảnh PNG/JPG/WebP sẽ ở trạng thái NEEDS_REVIEW cho tới khi bật OCR/vision.</div>
       </section>
 
       <section class="panel">
-        <h2>Generate test cases</h2>
+        <h2>⚙️ Sinh test case</h2>
         <form id="chat-form">
-          <label for="feature">Feature / Requirement</label>
-          <textarea id="feature" required placeholder="Feature or requirement to test"></textarea>
+          <label for="feature">Feature / Yêu cầu</label>
+          <textarea id="feature" required placeholder="Mô tả feature hoặc yêu cầu cần test"></textarea>
           <div class="row">
             <div>
               <label for="actor">Actor</label>
-              <input id="actor" placeholder="User role" />
+              <input id="actor" placeholder="Vai trò người dùng" />
             </div>
             <div>
               <label for="platform">Platform</label>
-              <input id="platform" placeholder="Application surface" />
+              <input id="platform" placeholder="Nền tảng / màn hình" />
             </div>
           </div>
-          <label for="criteria">Acceptance criteria</label>
-          <textarea id="criteria" placeholder="Acceptance criteria"></textarea>
-          <button id="send" type="submit">Generate test cases</button>
+          <label for="criteria">Tiêu chí chấp nhận</label>
+          <textarea id="criteria" placeholder="Mỗi tiêu chí một dòng"></textarea>
+          <button id="send" type="submit">✨ Sinh test case</button>
         </form>
       </section>
 
       <section class="panel">
-        <h2>Knowledge base</h2>
+        <h2>🗂️ Knowledge base</h2>
         <div id="knowledge-list" class="knowledge-list"></div>
       </section>
     </aside>
     <main>
       <div class="toolbar">
-        <strong>Generated test cases</strong>
-        <span class="status" id="status">Ready</span>
-        <button id="export-csv" type="button" style="display:none;margin-left:auto;padding:4px 12px;font-size:13px;cursor:pointer;">Export CSV</button>
+        <strong>📋 Test case đã sinh</strong>
+        <span class="status" id="status">Sẵn sàng</span>
+        <button id="export-csv" class="light" type="button" style="display:none;width:auto;margin-left:auto;padding:8px 14px;font-size:13px;">⬇ Export CSV</button>
       </div>
-      <div id="output" class="empty">Train tai lieu hoac nhap feature, sau do bam Generate.</div>
+      <div id="output" class="empty"><div class="empty-art">🧪</div><div>Train tài liệu hoặc nhập feature, rồi bấm <b>Sinh test case</b>.</div></div>
     </main>
   </div>
   <script>
@@ -473,27 +488,27 @@ CHAT_HTML = """<!doctype html>
 
     function renderKnowledge(items) {
       if (!items.length) {
-        knowledgeList.innerHTML = '<div class="small">No trained knowledge yet.</div>';
+        knowledgeList.innerHTML = '<div class="small">Chưa có kiến thức nào. Hãy train tài liệu đầu tiên 👆</div>';
         return;
       }
-      knowledgeList.innerHTML = items.map(item => `
-        <div class="knowledge-item" data-id="${escapeHtml(item.id)}">
+      knowledgeList.innerHTML = items.map((item, i) => `
+        <div class="knowledge-item" data-id="${escapeHtml(item.id)}" style="animation-delay:${Math.min(i * 45, 360)}ms">
           <strong>${escapeHtml(item.title)}<span class="kb-status ${String(item.status || "READY").toLowerCase()}">${escapeHtml(item.status || "READY")}</span></strong>
           <div class="small">${escapeHtml(item.type)} · ${escapeHtml(item.source)} · ${item.text_length} chars · ${item.chunk_count || 0} chunks</div>
           <div class="small">${escapeHtml(item.status_message || "")}</div>
           <div>${escapeHtml(item.preview)}</div>
           <div class="item-actions">
-            <button class="light" type="button" data-action="toggle-review">Review/Edit</button>
-            <button class="secondary" type="button" data-action="mark-ready">Mark READY</button>
-            <button class="light" type="button" data-action="mark-review">Needs review</button>
-            <button class="light" type="button" data-action="delete">Delete</button>
+            <button class="light" type="button" data-action="toggle-review">✎ Sửa/Review</button>
+            <button class="secondary" type="button" data-action="mark-ready">✓ READY</button>
+            <button class="light" type="button" data-action="mark-review">Cần review</button>
+            <button class="light" type="button" data-action="delete">🗑 Xóa</button>
           </div>
           <div class="review-box">
-            <label>Reviewed content used for generation</label>
+            <label>Nội dung dùng để sinh test case</label>
             <textarea>${escapeHtml(item.text || "")}</textarea>
             <div class="actions">
-              <button type="button" data-action="save-ready">Save as READY</button>
-              <button class="light" type="button" data-action="save-review">Save review note</button>
+              <button type="button" data-action="save-ready">Lưu READY</button>
+              <button class="light" type="button" data-action="save-review">Lưu nháp</button>
             </div>
           </div>
         </div>
@@ -501,7 +516,7 @@ CHAT_HTML = """<!doctype html>
     }
 
     async function updateKnowledge(id, action, text = null) {
-      statusEl.textContent = "Updating knowledge...";
+      statusEl.textContent = "Đang cập nhật...";
       const payload = { id, action };
       if (text !== null) payload.text = text;
       const response = await fetch("/knowledge/action", {
@@ -512,20 +527,20 @@ CHAT_HTML = """<!doctype html>
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Knowledge update failed");
       await loadKnowledge();
-      statusEl.textContent = data.item ? `Updated: ${data.item.status}` : "Updated";
+      statusEl.textContent = data.item ? `Đã cập nhật: ${data.item.status}` : "Đã cập nhật";
     }
 
     function syncTrainingMode() {
       if (knowledgeType.value === "diagram") {
         knowledgeText.disabled = true;
         trainText.disabled = true;
-        knowledgeText.placeholder = "Diagram should be uploaded as a file. Use SVG/drawio/BPMN/Mermaid/PDF for readable diagrams; PNG/JPG/WebP will be saved as NEEDS_REVIEW.";
-        trainingHint.textContent = "Diagram mode: upload the diagram file. Text paste is disabled because diagrams are normally visual artifacts, not manual text.";
+        knowledgeText.placeholder = "Diagram nên upload dưới dạng file. Dùng SVG/drawio/BPMN/Mermaid/PDF để đọc được; PNG/JPG/WebP sẽ ở NEEDS_REVIEW.";
+        trainingHint.textContent = "Chế độ diagram: hãy upload file. Ô paste bị tắt vì diagram thường là ảnh trực quan, không phải text.";
       } else {
         knowledgeText.disabled = false;
         trainText.disabled = false;
-        knowledgeText.placeholder = "Paste requirement, workflow, rules, or process text here.";
-        trainingHint.textContent = "Use paste for docs/workflows. Use upload for diagrams. Image-only PNG/JPG/WebP will be saved as NEEDS_REVIEW until OCR/vision is connected.";
+        knowledgeText.placeholder = "Dán yêu cầu, workflow, rule hoặc mô tả quy trình vào đây.";
+        trainingHint.textContent = "Dùng paste cho tài liệu/workflow. Upload cho diagram. Ảnh PNG/JPG/WebP sẽ ở NEEDS_REVIEW cho tới khi bật OCR/vision.";
       }
     }
 
@@ -539,9 +554,13 @@ CHAT_HTML = """<!doctype html>
       const response = await fetch("/ai/status");
       const data = await response.json();
       const aiStatus = document.querySelector("#ai-status");
-      aiStatus.textContent = data.configured
-        ? `AI: ${data.model} connected via ${data.wire_api}`
-        : "AI: fallback mode. Configure MAAS_API_KEY or LLM_API_KEY to enable LLM RAG.";
+      if (data.configured) {
+        aiStatus.className = "hint ok";
+        aiStatus.textContent = `✅ AI: ${data.model} (qua ${data.wire_api})`;
+      } else {
+        aiStatus.className = "hint";
+        aiStatus.textContent = "⚠️ AI: chế độ fallback. Cấu hình MAAS_API_KEY hoặc LLM_API_KEY để bật LLM RAG.";
+      }
     }
 
     function render(data) {
@@ -551,29 +570,29 @@ CHAT_HTML = """<!doctype html>
       output.innerHTML = `
         <section class="summary">
           <h2>${escapeHtml(data.feature)}</h2>
-          <div>${escapeHtml(data.actor)} · ${escapeHtml(data.platform)} · ${cases.length} cases · AI mode: ${escapeHtml(data.ai_mode || "fallback")}</div>
-          <div class="section-title">Knowledge used</div>
-          ${sourceRefs.length ? list(sourceRefs.map(ref => `${ref.title} (${ref.type})`)) : '<div class="small">No matching knowledge found.</div>'}
-          <div class="section-title">Context summary</div>
-          <div>${escapeHtml(data.context_summary || "No context summary.")}</div>
+          <div>${escapeHtml(data.actor)} · ${escapeHtml(data.platform)} · ${cases.length} test case · AI: ${escapeHtml(data.ai_mode || "fallback")}</div>
+          <div class="section-title">Kiến thức đã dùng</div>
+          ${sourceRefs.length ? list(sourceRefs.map(ref => `${ref.title} (${ref.type})`)) : '<div class="small">Không tìm thấy kiến thức khớp.</div>'}
+          <div class="section-title">Tóm tắt ngữ cảnh</div>
+          <div>${escapeHtml(data.context_summary || "Không có tóm tắt ngữ cảnh.")}</div>
         </section>
         <section class="cases">
-          ${cases.map(testCase => `
-            <article class="case">
+          ${cases.map((testCase, i) => `
+            <article class="case" style="animation-delay:${Math.min(i * 60, 600)}ms">
               <h3>${escapeHtml(testCase.id)} · ${escapeHtml(testCase.title)}</h3>
               <div class="meta">
                 <span class="pill">${escapeHtml(testCase.type)}</span>
                 <span class="pill ${String(testCase.priority).toLowerCase()}">${escapeHtml(testCase.priority)}</span>
               </div>
-              <div class="section-title">Preconditions</div>
+              <div class="section-title">Điều kiện tiên quyết</div>
               ${list(testCase.preconditions || [])}
-              <div class="section-title">Test data</div>
+              <div class="section-title">Dữ liệu test</div>
               ${list(testCase.test_data || [])}
-              <div class="section-title">Steps</div>
+              <div class="section-title">Các bước</div>
               ${list(testCase.steps || [], true)}
-              <div class="section-title">Expected result</div>
+              <div class="section-title">Kết quả mong đợi</div>
               <p>${escapeHtml(testCase.expected_result)}</p>
-              ${(testCase.references || []).length ? `<div class="section-title">References</div>${list(testCase.references)}` : ""}
+              ${(testCase.references || []).length ? `<div class="section-title">Tham chiếu</div>${list(testCase.references)}` : ""}
             </article>
           `).join("")}
         </section>
@@ -588,7 +607,7 @@ CHAT_HTML = """<!doctype html>
         source: "pasted-text"
       };
       trainText.disabled = true;
-      statusEl.textContent = "Training text...";
+      statusEl.textContent = "Đang train text...";
       try {
         const response = await fetch("/knowledge", {
           method: "POST",
@@ -598,9 +617,12 @@ CHAT_HTML = """<!doctype html>
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Training failed");
         await loadKnowledge();
-        statusEl.textContent = "Trained";
+        statusEl.textContent = "Đã train ✓";
+        // Xoá nội dung đã nhập sau khi train thành công.
+        document.querySelector("#knowledge-title").value = "";
+        knowledgeText.value = "";
       } catch (error) {
-        statusEl.textContent = "Error";
+        statusEl.textContent = "Lỗi";
         output.className = "error";
         output.textContent = error.message;
       } finally {
@@ -611,7 +633,7 @@ CHAT_HTML = """<!doctype html>
     async function trainFromFile() {
       const fileInput = document.querySelector("#knowledge-file");
       if (!fileInput.files.length) {
-        statusEl.textContent = "Choose a file first";
+        statusEl.textContent = "Hãy chọn file trước";
         return;
       }
       const formData = new FormData();
@@ -619,15 +641,18 @@ CHAT_HTML = """<!doctype html>
       formData.append("title", document.querySelector("#knowledge-title").value || fileInput.files[0].name);
       formData.append("type", document.querySelector("#knowledge-type").value);
       trainFile.disabled = true;
-      statusEl.textContent = "Training file...";
+      statusEl.textContent = "Đang train file...";
       try {
         const response = await fetch("/knowledge/upload", { method: "POST", body: formData });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Upload failed");
         await loadKnowledge();
-        statusEl.textContent = `Saved: ${data.item?.status || "READY"}`;
+        statusEl.textContent = `Đã lưu: ${data.item?.status || "READY"}`;
+        // Xoá cache file đã chọn để lần upload sau không dính file cũ.
+        fileInput.value = "";
+        document.querySelector("#knowledge-title").value = "";
       } catch (error) {
-        statusEl.textContent = "Error";
+        statusEl.textContent = "Lỗi";
         output.className = "error";
         output.textContent = error.message;
       } finally {
@@ -638,9 +663,9 @@ CHAT_HTML = """<!doctype html>
     form.addEventListener("submit", async event => {
       event.preventDefault();
       send.disabled = true;
-      statusEl.textContent = "Generating...";
+      statusEl.textContent = "Đang sinh...";
       output.className = "empty";
-      output.textContent = "Dang tao test cases tu knowledge base...";
+      output.innerHTML = '<div class="spinner"></div><div>Đang sinh test case từ knowledge base...</div>';
 
       const payload = {
         feature: document.querySelector("#feature").value,
@@ -660,11 +685,11 @@ CHAT_HTML = """<!doctype html>
         lastGeneratedData = data;
         exportCsvBtn.style.display = "inline-block";
         render(data);
-        statusEl.textContent = "Done";
+        statusEl.textContent = "Xong ✓";
       } catch (error) {
         output.className = "error";
         output.textContent = error.message;
-        statusEl.textContent = "Error";
+        statusEl.textContent = "Lỗi";
       } finally {
         send.disabled = false;
       }
@@ -674,7 +699,7 @@ CHAT_HTML = """<!doctype html>
       if (!lastGeneratedData) return;
       try {
         exportCsvBtn.disabled = true;
-        statusEl.textContent = "Exporting...";
+        statusEl.textContent = "Đang export...";
         const response = await fetch("/export/csv", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -688,9 +713,9 @@ CHAT_HTML = """<!doctype html>
         a.download = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || "testcases.csv";
         a.click();
         URL.revokeObjectURL(url);
-        statusEl.textContent = "Exported";
+        statusEl.textContent = "Đã export ✓";
       } catch (error) {
-        statusEl.textContent = "Export error";
+        statusEl.textContent = "Lỗi export";
       } finally {
         exportCsvBtn.disabled = false;
       }
@@ -715,7 +740,7 @@ CHAT_HTML = """<!doctype html>
         return;
       }
 
-      if (action === "delete" && !confirm("Delete this knowledge item?")) {
+      if (action === "delete" && !confirm("Xóa knowledge này?")) {
         return;
       }
 
@@ -726,7 +751,7 @@ CHAT_HTML = """<!doctype html>
         if (action === "save-ready") await updateKnowledge(id, "save-ready", textarea.value);
         if (action === "save-review") await updateKnowledge(id, "save-review", textarea.value);
       } catch (error) {
-        statusEl.textContent = "Error";
+        statusEl.textContent = "Lỗi";
         output.className = "error";
         output.textContent = error.message;
       }
@@ -1069,6 +1094,7 @@ def update_knowledge_item(knowledge_id: str, action: str, text: str | None = Non
 
 
 def retrieve_context(query: str, limit: int = 4) -> list[dict]:
+    _hydrate_from_memory()
     query_keywords = _keywords(query)
     scored = []
     for item in _read_knowledge():
@@ -1365,6 +1391,86 @@ def _memory_recall(query: str, limit: int = 4) -> list[dict]:
         return items
     except Exception:
         return []
+
+
+_memory_hydrated = False
+
+
+def _memory_list(limit: int = 100) -> list[dict]:
+    """List every persisted memory record for this namespace. Used to rebuild the
+    local knowledge store after a restart wipes the ephemeral .agentbase volume."""
+    if not _memory_enabled():
+        return []
+    token = _memory_token()
+    if not token:
+        return []
+    try:
+        import httpx
+
+        mid = os.getenv("MEMORY_ID")
+        resp = httpx.get(
+            f"{MEMORY_RECORDS_API}/{mid}/memory-records",
+            params={"namespace": _memory_namespace(), "limit": limit},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        records = resp.json()
+        if not isinstance(records, list):
+            records = records.get("listData") or records.get("content") or []
+        return [rec for rec in records if isinstance(rec, dict)]
+    except Exception:
+        return []
+
+
+def _hydrate_from_memory() -> None:
+    """Restore trained knowledge from the durable Memory Service into the local store
+    on first access. The runtime's local .agentbase volume is ephemeral, so after a
+    restart the local knowledge.json is empty even though the Memory Service still holds
+    every READY item — this is why trained knowledge appeared to be "lost" on the UI.
+    Runs at most once per process and is fully best-effort: any failure leaves the
+    request path untouched."""
+    global _memory_hydrated
+    if _memory_hydrated or not _memory_enabled():
+        return
+    _memory_hydrated = True  # mark first so a failure never re-runs on every request
+    records = _memory_list(limit=100)
+    if not records:
+        return
+    try:
+        with _knowledge_lock():
+            items = _read_knowledge_unlocked()
+            seen = {_normalize_multiline(it.get("text", "")) for it in items}
+            restored = []
+            for rec in records:
+                raw = _normalize_multiline(rec.get("memory", ""))
+                if not raw:
+                    continue
+                title, _, body = raw.partition("\n")
+                body = body.strip() or raw
+                if body in seen:
+                    continue
+                seen.add(body)
+                restored.append(
+                    {
+                        "id": f"MEM-{rec.get('id')}",
+                        "title": _clean_text(title)[:120] or "Restored memory",
+                        "type": AUTO_LEARNED_TYPE,
+                        "source": "memory-service",
+                        "text": body,
+                        "text_length": len(body),
+                        "chunks": _chunk_text(body),
+                        "preview": _preview(body),
+                        "status": READY,
+                        "status_message": "Restored from Memory Service.",
+                        "readable": True,
+                        "created_at": rec.get("created_at") or datetime.now().isoformat(),
+                    }
+                )
+            if restored:
+                _write_knowledge_unlocked((items + restored)[:100])
+    except Exception:
+        return
 
 
 def _auto_learn(feature: str, learned_summary: str) -> dict | None:
@@ -1951,6 +2057,7 @@ async def ai_status_api(request: Request) -> JSONResponse:
 
 async def knowledge_list_api(request: Request) -> JSONResponse:
     items = []
+    _hydrate_from_memory()
     try:
         knowledge_items = _read_knowledge()
     except RuntimeError as exc:
